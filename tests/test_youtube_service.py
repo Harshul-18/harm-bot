@@ -23,7 +23,7 @@ VIDEO_INFO = {
 
 class IdentifierTests(unittest.TestCase):
     def test_extracts_common_video_urls(self) -> None:
-        video_id = "rfscVS0vtbw"
+        video_id = "UOD4_4op2-k"
         values = [
             video_id,
             f"https://www.youtube.com/watch?v={video_id}",
@@ -51,24 +51,24 @@ class YouTubeServiceTests(unittest.TestCase):
     def test_video_uses_ytdlp_and_normalizes_metadata(self) -> None:
         service = YouTubeService()
         service._extract_with_ytdlp = Mock(return_value=VIDEO_INFO)
-        video = service.get_video("rfscVS0vtbw")
+        video = service.get_video("UOD4_4op2-k")
         self.assertEqual(video.title, "Learn Python")
         self.assertEqual(video.category, "Education")
         self.assertEqual(video.provider, "yt-dlp")
-        self.assertEqual(video.url, "https://www.youtube.com/watch?v=rfscVS0vtbw")
+        self.assertEqual(video.url, "https://www.youtube.com/watch?v=UOD4_4op2-k")
 
     def test_video_falls_back_to_pytubefix(self) -> None:
         service = YouTubeService()
         service._extract_with_ytdlp = Mock(side_effect=RuntimeError("primary failed"))
         fallback = Mock(
-            video_id="rfscVS0vtbw",
+            video_id="UOD4_4op2-k",
             title="Fallback title",
             description="Fallback description",
             channel_id="UC123",
             author="Fallback Channel",
         )
         with patch("youtube_service.YouTube", return_value=fallback):
-            video = service.get_video("rfscVS0vtbw")
+            video = service.get_video("UOD4_4op2-k")
         self.assertEqual(video.title, "Fallback title")
         self.assertEqual(video.provider, "pytubefix")
 
@@ -78,7 +78,7 @@ class YouTubeServiceTests(unittest.TestCase):
             return_value={"entries": [VIDEO_INFO, {**VIDEO_INFO, "id": "dQw4w9WgXcQ"}]}
         )
         videos = service.search_videos("python tutorial", 2)
-        self.assertEqual([video.video_id for video in videos], ["rfscVS0vtbw", "dQw4w9WgXcQ"])
+        self.assertEqual([video.video_id for video in videos], ["UOD4_4op2-k", "dQw4w9WgXcQ"])
         call_value = service._extract_with_ytdlp.call_args.args[0]
         self.assertEqual(call_value, "ytsearch2:python tutorial")
 
