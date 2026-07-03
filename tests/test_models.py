@@ -4,6 +4,7 @@ import pickle
 import unittest
 from pathlib import Path
 
+from categoryPredictor import load_model
 from colors import dataset
 
 
@@ -11,6 +12,9 @@ MODEL_DIR = Path(__file__).resolve().parents[1] / "models"
 
 
 class ModelInventoryTests(unittest.TestCase):
+    def test_runtime_model_cache_is_memory_bounded(self) -> None:
+        self.assertEqual(load_model.cache_parameters()["maxsize"], 3)
+
     def test_every_category_has_a_matching_model_and_class_count(self) -> None:
         for category, labels in dataset.items():
             filename = f"{category.lower().replace(' ', '_')}_model.pkl"

@@ -88,6 +88,14 @@ no keyless YouTube library can honestly guarantee lifetime availability.
 If captions are absent or blocked, HARM Bot falls back to a metadata-based
 educational assessment instead of failing the page.
 
+## Memory management
+
+The trained models total approximately 1.9 GB, but the application never keeps
+the entire collection in memory. Its bounded model cache retains only the three
+classifiers needed for the current prediction: education, category, and one
+subcategory model. Older subcategory models are released automatically, which
+keeps channel, playlist, and learning-path workflows within hosted memory limits.
+
 ## License
 
 Released under the [MIT License](LICENSE).

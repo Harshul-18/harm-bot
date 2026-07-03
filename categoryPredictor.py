@@ -1,23 +1,23 @@
 import pickle
 import warnings
 import os
+from functools import lru_cache
 
 from colors import dataset
 
 warnings.filterwarnings("ignore")
 
-# Cache for loaded models to avoid reloading them for each prediction
-_model_cache = {}
-
+@lru_cache(maxsize=3)
 def load_model(model_path):
-    """Load a model from cache or disk with error handling"""
-    if model_path in _model_cache:
-        return _model_cache[model_path]
-    
+    """Load a model while keeping at most three classifiers resident.
+
+    A prediction needs the education model, category model, and one subcategory
+    model. An unbounded cache eventually retained the complete 1.9 GB model set
+    and exceeded Streamlit Community Cloud's memory limit.
+    """
     try:
-        model = pickle.load(open(model_path, "rb"))
-        _model_cache[model_path] = model
-        return model
+        with open(model_path, "rb") as model_file:
+            return pickle.load(model_file)
     except Exception as e:
         raise Exception(f"Error loading model from {model_path}: {str(e)}")
 
