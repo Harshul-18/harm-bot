@@ -36,6 +36,7 @@ EXPECTED_MODELS = {
     "photography_and_video_model.pkl",
     "teaching_and_academics_model.pkl",
 }
+APP_BACKGROUND = "#160000"
 
 
 st.set_page_config(
@@ -148,14 +149,14 @@ def render_prediction(text: str) -> None:
         f"<h5>This video comes under the {category} category.</h5>",
         unsafe_allow_html=True,
     )
-    figure, axis = plt.subplots(facecolor="#ffffff")
+    figure, axis = plt.subplots(facecolor=APP_BACKGROUND)
     bars = axis.barh(subcategories, probabilities, color="#E11D48")
-    axis.set_facecolor("#ffffff")
-    axis.tick_params(axis="x", colors="black")
-    axis.tick_params(axis="y", colors="black", labelsize=8)
+    axis.set_facecolor(APP_BACKGROUND)
+    axis.tick_params(axis="x", colors="white")
+    axis.tick_params(axis="y", colors="white", labelsize=8)
     for spine in axis.spines.values():
-        spine.set_color("black")
-    axis.bar_label(bars, fmt="%.1f%%", label_type="center", color="black", fontsize=7)
+        spine.set_color("white")
+    axis.bar_label(bars, fmt="%.1f%%", label_type="center", color="white", fontsize=7)
     figure.tight_layout()
     st.pyplot(figure)
     plt.close(figure)

@@ -22,6 +22,13 @@ class AppSmokeTests(unittest.TestCase):
         self.assertIn('[data-testid="stHeader"]', source)
         self.assertIn('stBaseButton-headerNoPadding', source)
 
+    def test_matplotlib_plot_matches_the_app_background(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        source = app_path.read_text(encoding="utf-8")
+        self.assertIn('APP_BACKGROUND = "#160000"', source)
+        self.assertIn("plt.subplots(facecolor=APP_BACKGROUND)", source)
+        self.assertIn("axis.set_facecolor(APP_BACKGROUND)", source)
+
     def test_app_starts_with_all_five_pages(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(str(app_path)).run(timeout=30)
