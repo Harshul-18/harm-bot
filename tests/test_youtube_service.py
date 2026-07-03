@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock, patch
 
 from youtube_service import (
     YouTubeService,
@@ -10,23 +11,14 @@ from youtube_service import (
 )
 
 
-class FakeResponse:
-    def __init__(self, payload: dict, ok: bool = True) -> None:
-        self.payload = payload
-        self.ok = ok
-
-    def json(self) -> dict:
-        return self.payload
-
-
-class FakeSession:
-    def __init__(self, responses: list[dict]) -> None:
-        self.responses = iter(responses)
-        self.calls: list[tuple[str, dict, int]] = []
-
-    def get(self, url: str, params: dict, timeout: int) -> FakeResponse:
-        self.calls.append((url, params, timeout))
-        return FakeResponse(next(self.responses))
+VIDEO_INFO = {
+    "id": "rfscVS0vtbw",
+    "title": "Learn Python",
+    "description": "A complete course",
+    "channel_id": "UC123",
+    "channel": "Example Channel",
+    "categories": ["Education"],
+}
 
 
 class IdentifierTests(unittest.TestCase):
@@ -56,51 +48,62 @@ class IdentifierTests(unittest.TestCase):
 
 
 class YouTubeServiceTests(unittest.TestCase):
-    def test_video_response_is_normalized(self) -> None:
-        service = YouTubeService("test-key")
-        service.session = FakeSession(
-            [
-                {
-                    "items": [
-                        {
-                            "id": "rfscVS0vtbw",
-                            "snippet": {
-                                "title": "Learn Python",
-                                "description": "A complete course",
-                                "channelId": "UC123",
-                                "channelTitle": "Example Channel",
-                                "categoryId": "27",
-                            },
-                        }
-                    ]
-                }
-            ]
-        )
+    def test_video_uses_ytdlp_and_normalizes_metadata(self) -> None:
+        service = YouTubeService()
+        service._extract_with_ytdlp = Mock(return_value=VIDEO_INFO)
         video = service.get_video("rfscVS0vtbw")
         self.assertEqual(video.title, "Learn Python")
         self.assertEqual(video.category, "Education")
+        self.assertEqual(video.provider, "yt-dlp")
         self.assertEqual(video.url, "https://www.youtube.com/watch?v=rfscVS0vtbw")
 
-    def test_playlist_pages_are_followed_and_details_are_batched(self) -> None:
-        service = YouTubeService("test-key")
-        service.session = FakeSession(
-            [
-                {
-                    "items": [{"contentDetails": {"videoId": "aaaaaaaaaaa"}}],
-                    "nextPageToken": "next",
-                },
-                {"items": [{"contentDetails": {"videoId": "bbbbbbbbbbb"}}]},
-                {
-                    "items": [
-                        {"id": "aaaaaaaaaaa", "snippet": {"title": "A"}},
-                        {"id": "bbbbbbbbbbb", "snippet": {"title": "B"}},
-                    ]
-                },
-            ]
+    def test_video_falls_back_to_pytubefix(self) -> None:
+        service = YouTubeService()
+        service._extract_with_ytdlp = Mock(side_effect=RuntimeError("primary failed"))
+        fallback = Mock(
+            video_id="rfscVS0vtbw",
+            title="Fallback title",
+            description="Fallback description",
+            channel_id="UC123",
+            author="Fallback Channel",
+        )
+        with patch("youtube_service.YouTube", return_value=fallback):
+            video = service.get_video("rfscVS0vtbw")
+        self.assertEqual(video.title, "Fallback title")
+        self.assertEqual(video.provider, "pytubefix")
+
+    def test_search_uses_flat_keyless_results(self) -> None:
+        service = YouTubeService()
+        service._extract_with_ytdlp = Mock(
+            return_value={"entries": [VIDEO_INFO, {**VIDEO_INFO, "id": "dQw4w9WgXcQ"}]}
+        )
+        videos = service.search_videos("python tutorial", 2)
+        self.assertEqual([video.video_id for video in videos], ["rfscVS0vtbw", "dQw4w9WgXcQ"])
+        call_value = service._extract_with_ytdlp.call_args.args[0]
+        self.assertEqual(call_value, "ytsearch2:python tutorial")
+
+    def test_playlist_returns_all_public_flat_entries(self) -> None:
+        service = YouTubeService()
+        service._extract_with_ytdlp = Mock(
+            return_value={"entries": [VIDEO_INFO, {**VIDEO_INFO, "id": "dQw4w9WgXcQ"}]}
         )
         videos = service.get_playlist_videos("PL1234567890")
-        self.assertEqual([video.title for video in videos], ["A", "B"])
-        self.assertEqual(len(service.session.calls), 3)
+        self.assertEqual(len(videos), 2)
+        self.assertTrue(
+            service._extract_with_ytdlp.call_args.args[0].endswith("PL1234567890")
+        )
+
+    def test_channel_accepts_handle_and_honors_limit(self) -> None:
+        service = YouTubeService()
+        service._extract_with_ytdlp = Mock(
+            return_value={"entries": [VIDEO_INFO, {**VIDEO_INFO, "id": "dQw4w9WgXcQ"}]}
+        )
+        videos = service.get_channel_videos("@freecodecamp", 1)
+        self.assertEqual(len(videos), 1)
+        self.assertEqual(
+            service._extract_with_ytdlp.call_args.args[0],
+            "https://www.youtube.com/@freecodecamp/videos",
+        )
 
 
 if __name__ == "__main__":

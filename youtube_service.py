@@ -1,39 +1,30 @@
-"""Maintained YouTube Data API integration used by every app page."""
+"""Keyless, dual-provider YouTube metadata integration.
+
+yt-dlp is the primary extractor. PyTubeFix is an independent fallback for
+temporary parser breakages. Both use public YouTube web surfaces, so failures
+are handled explicitly and surfaced without crashing the Streamlit session.
+"""
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+from itertools import islice
 from urllib.parse import parse_qs, urlparse
 
-import requests
+from pytubefix import Channel, Playlist, Search, YouTube
+from yt_dlp import YoutubeDL
 
 
-API_BASE_URL = "https://www.googleapis.com/youtube/v3"
+LOGGER = logging.getLogger(__name__)
 VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
 CHANNEL_ID_PATTERN = re.compile(r"^UC[A-Za-z0-9_-]{22}$")
 
-YOUTUBE_CATEGORIES = {
-    "1": "Film & Animation",
-    "2": "Autos & Vehicles",
-    "10": "Music",
-    "15": "Pets & Animals",
-    "17": "Sports",
-    "19": "Travel & Events",
-    "20": "Gaming",
-    "22": "People & Blogs",
-    "23": "Comedy",
-    "24": "Entertainment",
-    "25": "News & Politics",
-    "26": "How-to & Style",
-    "27": "Education",
-    "28": "Science & Technology",
-    "29": "Nonprofits & Activism",
-}
-
 
 class YouTubeServiceError(RuntimeError):
-    """A user-facing YouTube API failure."""
+    """A user-facing failure from both keyless extraction providers."""
 
 
 @dataclass(frozen=True)
@@ -44,6 +35,7 @@ class VideoData:
     channel_id: str
     channel_name: str
     category: str
+    provider: str = "unknown"
 
     @property
     def url(self) -> str:
@@ -89,170 +81,228 @@ def extract_playlist_id(value: str) -> str:
     return playlist_id
 
 
-class YouTubeService:
-    def __init__(self, api_key: str, timeout: int = 20) -> None:
-        if not api_key.strip():
-            raise YouTubeServiceError(
-                "YouTube API access is not configured. Add YOUTUBE_API_KEY to "
-                "Streamlit secrets."
-            )
-        self.api_key = api_key.strip()
-        self.timeout = timeout
-        self.session = requests.Session()
+def _safe_attribute(instance: object, name: str, default: object = "") -> object:
+    try:
+        value = getattr(instance, name)
+        return default if value is None else value
+    except Exception:
+        return default
 
-    def _get(self, endpoint: str, **params: object) -> dict:
-        response = self.session.get(
-            f"{API_BASE_URL}/{endpoint}",
-            params={**params, "key": self.api_key},
-            timeout=self.timeout,
-        )
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise YouTubeServiceError("YouTube returned an unreadable response.") from exc
-        if not response.ok:
-            message = payload.get("error", {}).get("message", "YouTube request failed.")
-            raise YouTubeServiceError(message)
-        return payload
+
+class _QuietYtDlpLogger:
+    def debug(self, message: str) -> None:
+        return None
+
+    def warning(self, message: str) -> None:
+        LOGGER.debug("yt-dlp: %s", message)
+
+    def error(self, message: str) -> None:
+        LOGGER.debug("yt-dlp: %s", message)
+
+
+class YouTubeService:
+    """Fetch YouTube data without a developer API key."""
+
+    def __init__(self, timeout: int = 20, retries: int = 3) -> None:
+        self.timeout = timeout
+        self.retries = retries
+
+    def _extract_with_ytdlp(
+        self,
+        value: str,
+        *,
+        flat: bool,
+        limit: int | None = None,
+    ) -> dict:
+        options: dict[str, object] = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "socket_timeout": self.timeout,
+            "retries": self.retries,
+            "extractor_retries": self.retries,
+            "cachedir": False,
+            "logger": _QuietYtDlpLogger(),
+            "extract_flat": flat,
+        }
+        if limit is not None:
+            options["playlistend"] = limit
+        with YoutubeDL(options) as extractor:
+            result = extractor.extract_info(value, download=False)
+        if not result:
+            raise YouTubeServiceError("YouTube returned no public results.")
+        return result
 
     @staticmethod
-    def _video_from_item(item: dict) -> VideoData:
-        snippet = item.get("snippet", {})
-        video_id = item.get("id", "")
-        if isinstance(video_id, dict):
-            video_id = video_id.get("videoId", "")
+    def _video_from_ytdlp(info: dict) -> VideoData:
+        video_id = str(info.get("id") or "")
+        if not VIDEO_ID_PATTERN.fullmatch(video_id):
+            url = str(info.get("webpage_url") or info.get("url") or "")
+            video_id = extract_video_id(url)
+        categories = info.get("categories") or []
+        category = str(categories[0]) if categories else "Unknown"
         return VideoData(
             video_id=video_id,
-            title=snippet.get("title", "Untitled video"),
-            description=snippet.get("description", ""),
-            channel_id=snippet.get("channelId", ""),
-            channel_name=snippet.get("channelTitle", "Unknown channel"),
-            category=YOUTUBE_CATEGORIES.get(snippet.get("categoryId", ""), "Unknown"),
+            title=str(info.get("title") or "Untitled video"),
+            description=str(info.get("description") or ""),
+            channel_id=str(info.get("channel_id") or info.get("uploader_id") or ""),
+            channel_name=str(info.get("channel") or info.get("uploader") or "Unknown channel"),
+            category=category,
+            provider="yt-dlp",
         )
 
+    @staticmethod
+    def _video_from_pytubefix(video: YouTube) -> VideoData:
+        video_id = str(_safe_attribute(video, "video_id"))
+        if not VIDEO_ID_PATTERN.fullmatch(video_id):
+            video_id = extract_video_id(str(_safe_attribute(video, "watch_url")))
+        return VideoData(
+            video_id=video_id,
+            title=str(_safe_attribute(video, "title", "Untitled video")),
+            description=str(_safe_attribute(video, "description")),
+            channel_id=str(_safe_attribute(video, "channel_id")),
+            channel_name=str(_safe_attribute(video, "author", "Unknown channel")),
+            category="Unknown",
+            provider="pytubefix",
+        )
+
+    @staticmethod
+    def _entries(info: dict, limit: int | None = None) -> list[dict]:
+        entries = [entry for entry in (info.get("entries") or []) if entry]
+        return entries if limit is None else entries[:limit]
+
+    @lru_cache(maxsize=256)
     def get_video(self, value: str) -> VideoData:
         video_id = extract_video_id(value)
-        payload = self._get("videos", part="snippet", id=video_id)
-        items = payload.get("items", [])
-        if not items:
-            raise YouTubeServiceError("That video was not found or is not public.")
-        return self._video_from_item(items[0])
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        try:
+            return self._video_from_ytdlp(
+                self._extract_with_ytdlp(url, flat=False)
+            )
+        except Exception as primary_error:
+            LOGGER.warning("yt-dlp video extraction failed: %s", primary_error)
+            try:
+                return self._video_from_pytubefix(YouTube(url))
+            except Exception as fallback_error:
+                LOGGER.warning("PyTubeFix video extraction failed: %s", fallback_error)
+                raise YouTubeServiceError(
+                    "This video could not be read by either keyless provider. "
+                    "YouTube may be temporarily blocking automated requests."
+                ) from fallback_error
 
-    def get_videos(self, video_ids: list[str]) -> list[VideoData]:
-        results: list[VideoData] = []
-        for start in range(0, len(video_ids), 50):
-            chunk = video_ids[start : start + 50]
-            payload = self._get("videos", part="snippet", id=",".join(chunk))
-            by_id = {
-                item["id"]: self._video_from_item(item)
-                for item in payload.get("items", [])
-            }
-            results.extend(by_id[video_id] for video_id in chunk if video_id in by_id)
-        return results
+    def _search_with_pytubefix(self, query: str, limit: int) -> list[VideoData]:
+        videos = list(islice(Search(query).videos, limit))
+        return [self._video_from_pytubefix(video) for video in videos]
+
+    @lru_cache(maxsize=64)
+    def _search_cached(self, query: str, limit: int) -> tuple[VideoData, ...]:
+        requested = max(1, min(int(limit), 50))
+        try:
+            info = self._extract_with_ytdlp(
+                f"ytsearch{requested}:{query}", flat=True, limit=requested
+            )
+            videos = [
+                self._video_from_ytdlp(entry)
+                for entry in self._entries(info, requested)
+            ]
+            if videos:
+                return tuple(videos)
+        except Exception as primary_error:
+            LOGGER.warning("yt-dlp search failed: %s", primary_error)
+        try:
+            return tuple(self._search_with_pytubefix(query, requested))
+        except Exception as fallback_error:
+            LOGGER.warning("PyTubeFix search failed: %s", fallback_error)
+            raise YouTubeServiceError(
+                "YouTube search is temporarily unavailable from both keyless providers."
+            ) from fallback_error
 
     def search_videos(self, query: str, limit: int) -> list[VideoData]:
-        payload = self._get(
-            "search",
-            part="snippet",
-            q=query,
-            type="video",
-            maxResults=max(1, min(int(limit), 50)),
-            safeSearch="moderate",
-        )
-        return [
-            self._video_from_item(item)
-            for item in payload.get("items", [])
-            if item.get("id", {}).get("videoId")
-        ]
+        if not query.strip():
+            return []
+        return list(self._search_cached(query.strip(), int(limit)))
+
+    def _playlist_with_pytubefix(self, url: str) -> list[VideoData]:
+        return [self._video_from_pytubefix(video) for video in Playlist(url).videos]
+
+    @lru_cache(maxsize=32)
+    def _playlist_cached(self, playlist_id: str) -> tuple[VideoData, ...]:
+        url = f"https://www.youtube.com/playlist?list={playlist_id}"
+        try:
+            info = self._extract_with_ytdlp(url, flat=True)
+            videos = [
+                self._video_from_ytdlp(entry) for entry in self._entries(info)
+            ]
+            if videos:
+                return tuple(videos)
+        except Exception as primary_error:
+            LOGGER.warning("yt-dlp playlist extraction failed: %s", primary_error)
+        try:
+            videos = self._playlist_with_pytubefix(url)
+            if videos:
+                return tuple(videos)
+        except Exception as fallback_error:
+            LOGGER.warning("PyTubeFix playlist extraction failed: %s", fallback_error)
+            raise YouTubeServiceError(
+                "This playlist could not be read by either keyless provider."
+            ) from fallback_error
+        raise YouTubeServiceError("No public videos were found in that playlist.")
 
     def get_playlist_videos(self, value: str) -> list[VideoData]:
-        playlist_id = extract_playlist_id(value)
-        video_ids: list[str] = []
-        page_token: str | None = None
-        while True:
-            params: dict[str, object] = {
-                "part": "contentDetails",
-                "playlistId": playlist_id,
-                "maxResults": 50,
-            }
-            if page_token:
-                params["pageToken"] = page_token
-            payload = self._get("playlistItems", **params)
-            video_ids.extend(
-                item.get("contentDetails", {}).get("videoId", "")
-                for item in payload.get("items", [])
-            )
-            page_token = payload.get("nextPageToken")
-            if not page_token:
-                break
-        video_ids = [video_id for video_id in video_ids if video_id]
-        if not video_ids:
-            raise YouTubeServiceError("No public videos were found in that playlist.")
-        return self.get_videos(video_ids)
+        return list(self._playlist_cached(extract_playlist_id(value)))
 
-    def resolve_channel_id(self, value: str) -> str:
-        candidate = value.strip()
+    def _channel_url(self, value: str) -> str:
+        candidate = value.strip().rstrip("/")
         if CHANNEL_ID_PATTERN.fullmatch(candidate):
-            return candidate
-
+            return f"https://www.youtube.com/channel/{candidate}/videos"
         try:
-            return self.get_video(candidate).channel_id
+            video_id = extract_video_id(candidate)
+            channel_id = self.get_video(video_id).channel_id
+            if channel_id:
+                return f"https://www.youtube.com/channel/{channel_id}/videos"
         except YouTubeServiceError:
             pass
 
         parsed = urlparse(candidate if "://" in candidate else f"https://{candidate}")
-        parts = [part for part in parsed.path.split("/") if part]
-        if len(parts) >= 2 and parts[0] == "channel" and CHANNEL_ID_PATTERN.fullmatch(parts[1]):
-            return parts[1]
+        if parsed.netloc.lower().endswith("youtube.com"):
+            path = parsed.path.rstrip("/")
+            if not path:
+                raise YouTubeServiceError("Please enter a valid YouTube channel.")
+            if path.split("/")[-1] not in {"videos", "shorts", "streams"}:
+                path = f"{path}/videos"
+            return f"https://www.youtube.com{path}"
+        handle = candidate.lstrip("@")
+        if not handle or "/" in handle:
+            raise YouTubeServiceError("Please enter a valid YouTube channel URL or handle.")
+        return f"https://www.youtube.com/@{handle}/videos"
 
-        if parts and parts[0].startswith("@"):
-            payload = self._get("channels", part="id", forHandle=parts[0][1:])
-            items = payload.get("items", [])
-            if items:
-                return items[0]["id"]
+    def _channel_with_pytubefix(self, url: str, limit: int) -> list[VideoData]:
+        videos = islice(Channel(url).videos, limit)
+        return [self._video_from_pytubefix(video) for video in videos]
 
-        if len(parts) >= 2 and parts[0] == "user":
-            payload = self._get("channels", part="id", forUsername=parts[1])
-            items = payload.get("items", [])
-            if items:
-                return items[0]["id"]
-
-        query = parts[-1] if parts else candidate.lstrip("@")
-        payload = self._get(
-            "search", part="snippet", q=query, type="channel", maxResults=1
-        )
-        items = payload.get("items", [])
-        if not items:
-            raise YouTubeServiceError("That YouTube channel could not be found.")
-        return items[0]["id"]["channelId"]
+    @lru_cache(maxsize=64)
+    def _channel_cached(self, url: str, limit: int) -> tuple[VideoData, ...]:
+        requested = max(1, int(limit))
+        try:
+            info = self._extract_with_ytdlp(url, flat=True, limit=requested)
+            videos = [
+                self._video_from_ytdlp(entry)
+                for entry in self._entries(info, requested)
+            ]
+            if videos:
+                return tuple(videos)
+        except Exception as primary_error:
+            LOGGER.warning("yt-dlp channel extraction failed: %s", primary_error)
+        try:
+            videos = self._channel_with_pytubefix(url, requested)
+            if videos:
+                return tuple(videos)
+        except Exception as fallback_error:
+            LOGGER.warning("PyTubeFix channel extraction failed: %s", fallback_error)
+            raise YouTubeServiceError(
+                "This channel could not be read by either keyless provider."
+            ) from fallback_error
+        raise YouTubeServiceError("No public videos were found for this channel.")
 
     def get_channel_videos(self, value: str, limit: int) -> list[VideoData]:
-        channel_id = self.resolve_channel_id(value)
-        channel_payload = self._get(
-            "channels", part="contentDetails", id=channel_id
-        )
-        items = channel_payload.get("items", [])
-        if not items:
-            raise YouTubeServiceError("That YouTube channel could not be found.")
-        uploads_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
-
-        video_ids: list[str] = []
-        page_token: str | None = None
-        requested = max(1, int(limit))
-        while len(video_ids) < requested:
-            params: dict[str, object] = {
-                "part": "contentDetails",
-                "playlistId": uploads_id,
-                "maxResults": min(50, requested - len(video_ids)),
-            }
-            if page_token:
-                params["pageToken"] = page_token
-            payload = self._get("playlistItems", **params)
-            video_ids.extend(
-                item.get("contentDetails", {}).get("videoId", "")
-                for item in payload.get("items", [])
-            )
-            page_token = payload.get("nextPageToken")
-            if not page_token:
-                break
-        return self.get_videos([video_id for video_id in video_ids if video_id])
+        return list(self._channel_cached(self._channel_url(value), int(limit)))

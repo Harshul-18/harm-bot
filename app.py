@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -134,17 +133,8 @@ def check_models() -> bool:
 
 
 @st.cache_resource
-def youtube_service(api_key: str) -> YouTubeService:
-    return YouTubeService(api_key)
-
-
 def get_youtube_service() -> YouTubeService:
-    api_key = os.getenv("YOUTUBE_API_KEY", "")
-    try:
-        api_key = st.secrets.get("YOUTUBE_API_KEY", api_key)
-    except Exception:
-        pass
-    return youtube_service(api_key)
+    return YouTubeService()
 
 
 def render_prediction(text: str) -> None:

@@ -7,6 +7,14 @@ from streamlit.testing.v1 import AppTest
 
 
 class AppSmokeTests(unittest.TestCase):
+    def test_app_does_not_require_a_youtube_api_key(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        source = "\n".join(
+            (root / filename).read_text(encoding="utf-8")
+            for filename in ("app.py", "youtube_service.py")
+        )
+        self.assertNotIn("YOUTUBE_API_KEY", source)
+
     def test_sidebar_reopen_control_is_not_hidden_by_css(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         source = app_path.read_text(encoding="utf-8")
