@@ -95,6 +95,7 @@ def add_sidebar_menu() -> None:
         st.markdown("### Project links")
         st.link_button("GitHub", "https://github.com/Harshul-18")
         st.link_button("LinkedIn", "https://www.linkedin.com/in/harshulnanda/")
+        st.link_button("Buy me a coffee ☕", "https://www.buymeacoffee.com/HARMBOT")
 
 
 def add_logo() -> None:

@@ -39,6 +39,7 @@ class AppSmokeTests(unittest.TestCase):
         markdown = "\n".join(item.value for item in app.markdown)
         self.assertIn("created by Harshul Nanda", markdown)
         self.assertIn("Project links", markdown)
+        self.assertEqual(len(app.link_button), 3)
 
     def test_each_page_renders_its_original_input(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
