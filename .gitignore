@@ -2,6 +2,7 @@
 .idea/
 .vscode/
 .venv/
+harm-keyless-env/
 __pycache__/
 .pytest_cache/
 .ruff_cache/

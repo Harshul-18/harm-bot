@@ -17,55 +17,78 @@ The app retains its original five workflows:
 
 - Preserved all 16 trained models that are used by the application.
 - Removed three unused model artifacts and the obsolete model downloader.
-- Replaced broken YouTube scraping packages with the official YouTube Data API.
+- Replaced the broken YouTube integration with keyless `yt-dlp` extraction and
+  an independent PyTubeFix fallback. No developer key or quota is required.
 - Replaced the old transcript integration with `youtube-transcript-api`.
-- Updated Streamlit and reduced the dependency list from 34 entries to 7.
-- Added caching, clearer errors, reliable URL parsing, tests, and CSV export.
+- Updated Streamlit while retaining the original pages, branding, and behavior.
+- Added bounded caches, retries, clearer errors, reliable URL parsing, tests,
+  CSV export, and a visible sidebar reopen control.
+- Locked Python and every direct/transitive package version with integrity
+  hashes, with a documented upgrade and rollback workflow.
 - Removed old hosting metadata, team references, and unrelated external links.
 
 ## Architecture
 
 ```text
 app.py                  Streamlit UI and five page workflows
-youtube_service.py      YouTube Data API client and URL parsing
+youtube_service.py      Keyless yt-dlp client with PyTubeFix fallback
 categoryPredictor.py    Educational, category, and subcategory inference
 eduContentPredictor.py  Transcript analysis with metadata fallback
 statsViewer.py          Channel table, summary, chart, and CSV export
 colors.py               Model label taxonomy
 models/                 16 trained scikit-learn pipelines (Git LFS)
-tests/                  API, model-inventory, and Streamlit smoke tests
+scripts/                Live integration smoke test
+tests/                  Provider, model, and Streamlit regression tests
 ```
 
 ## Local setup
 
-The trained models require Python 3.11 and `scikit-learn==1.1.3` because that is
-the compatible release for the original serialized estimators.
+The trained models require the pinned Python and scikit-learn runtime because
+they are serialized estimators. The `.python-version` file records Python
+`3.11.15`.
+
+To keep the environment inside this project, create it with the name
+`harm-keyless-env` from the repository root. A virtual environment should be
+recreated from the lock on each computer rather than copied between computers:
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+python3.11 -m venv harm-keyless-env
+source harm-keyless-env/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --require-hashes -r requirements.lock
 streamlit run app.py
 ```
 
-Create a free YouTube Data API v3 key in Google Cloud Console, enable the
-YouTube Data API v3, and place the key in `.streamlit/secrets.toml`:
+Open `http://localhost:8501` if it does not open automatically. On later runs,
+only activate the existing environment and start Streamlit:
 
-```toml
-YOUTUBE_API_KEY = "your-key"
+```bash
+source harm-keyless-env/bin/activate
+streamlit run app.py
 ```
 
-The API key file is ignored by Git and must never be committed.
+Use `deactivate` when finished. The environment directory is local-only and is
+excluded from Git; the small lock files are what make it reproducible. No API
+key, account, or Streamlit secret is needed.
 
 ## Test
+
+Run the deterministic regression suite:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-The model test loads every retained classifier and verifies that each category
-has the expected number of trained output classes.
+Optionally verify YouTube's current public interfaces over the network:
+
+```bash
+python scripts/smoke_youtube.py --full
+python scripts/smoke_youtube.py --fallback
+```
+
+The first command checks video metadata, search, playlist, channel, and
+captions. The second deliberately disables the primary extractor and verifies
+PyTubeFix. See [UPGRADING.md](UPGRADING.md) before changing dependencies.
 
 ## GitHub setup
 
@@ -74,8 +97,6 @@ required.
 
 ```bash
 git lfs install
-git add .
-git commit -m "Modernize HARM Bot"
 git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/harm-bot.git
 git push -u origin main
@@ -90,21 +111,23 @@ Git LFS.
 2. Open [Streamlit Community Cloud](https://share.streamlit.io/) and create an
    app from the repository.
 3. Select `app.py` as the entrypoint and Python 3.11 in Advanced settings.
-4. Add the following secret in the app settings:
+4. Deploy and test all five pages from the public app URL.
 
-   ```toml
-   YOUTUBE_API_KEY = "your-key"
-   ```
-
-5. Deploy and test all five pages from the public app URL.
+`requirements.txt` delegates to the hash-locked `requirements.lock`, so cloud
+and local installations resolve to the same package set. There are no secrets
+to configure.
 
 ## Free-service boundaries
 
-The YouTube Data API has a free daily quota, which is suitable for a portfolio
-app but not unlimited public traffic. Transcript retrieval uses YouTube's public
-caption interface; YouTube may block cloud-provider IPs or a video may have no
-captions. When that happens, HARM Bot still returns a metadata-based educational
-assessment instead of failing the page.
+This design has no YouTube Data API quota and all application libraries are
+free/open source. It reads YouTube's public web interfaces, which are not a
+permanent API contract: YouTube can change them or block automated requests
+from a cloud IP. The dual-provider design, pinned runtime, live smoke test, and
+Git history make those changes quicker to detect, upgrade, and roll back, but
+no keyless YouTube library can honestly guarantee lifetime availability.
+
+If captions are absent or blocked, HARM Bot falls back to a metadata-based
+educational assessment instead of failing the page.
 
 ## License
 
