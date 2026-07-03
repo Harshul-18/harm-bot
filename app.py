@@ -336,7 +336,7 @@ def body_of_page_6() -> None:
             frame,
             column_config={"URL": st.column_config.LinkColumn("URL")},
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
         st.caption(
             "Levels are explainable title-and-description heuristics; topic labels come "

@@ -51,7 +51,7 @@ def generate_channel_video_data(
     st.dataframe(
         frame,
         column_config={"URL": st.column_config.LinkColumn("URL")},
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
     st.download_button(
