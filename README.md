@@ -90,11 +90,17 @@ educational assessment instead of failing the page.
 
 ## Memory management
 
-The trained models total approximately 1.9 GB, but the application never keeps
-the entire collection in memory. Its bounded model cache retains only the three
-classifiers needed for the current prediction: education, category, and one
-subcategory model. Older subcategory models are released automatically, which
-keeps channel, playlist, and learning-path workflows within hosted memory limits.
+The deployable trained models total approximately 1.1 GB, but the application
+never keeps the entire collection in memory. The original 100-tree category
+forest was reduced to a representative 20-tree trained ensemble for hosted
+inference, shrinking its runtime artifact from approximately 1.1 GB to 258 MB.
+The reproducible optimization script validates prediction agreement before
+writing an output model.
+
+At runtime, a bounded cache retains only the three classifiers needed for the
+current prediction: education, category, and one subcategory model. Older
+subcategory models are released automatically, keeping channel, playlist, and
+learning-path workflows within hosted memory limits.
 
 ## License
 

@@ -15,6 +15,10 @@ class ModelInventoryTests(unittest.TestCase):
     def test_runtime_model_cache_is_memory_bounded(self) -> None:
         self.assertEqual(load_model.cache_parameters()["maxsize"], 3)
 
+    def test_primary_category_model_fits_hosted_memory_budget(self) -> None:
+        category_model = MODEL_DIR / "cat_model.pkl"
+        self.assertLess(category_model.stat().st_size, 350 * 1024 * 1024)
+
     def test_every_category_has_a_matching_model_and_class_count(self) -> None:
         for category, labels in dataset.items():
             filename = f"{category.lower().replace(' ', '_')}_model.pkl"
@@ -30,6 +34,7 @@ class ModelInventoryTests(unittest.TestCase):
             education_model = pickle.load(handle)
         with (MODEL_DIR / "cat_model.pkl").open("rb") as handle:
             category_model = pickle.load(handle)
+        self.assertEqual(len(category_model.named_steps["clf"].estimators_), 20)
         self.assertEqual(len(education_model.predict(samples)), 1)
         self.assertEqual(len(category_model.predict(samples)), 1)
 
