@@ -52,7 +52,11 @@ def apply_styles() -> None:
     st.markdown(
         f"""
         <style>
-        #MainMenu, footer, header {{visibility: hidden;}}
+        #MainMenu, footer {{visibility: hidden;}}
+        [data-testid="stHeader"] {{background: transparent;}}
+        button[data-testid="stBaseButton-headerNoPadding"] {{
+            visibility: visible !important;
+        }}
         div.stButton > button:first-child,
         div.stLinkButton > a:first-child {{
             border: 1px solid #FFF;

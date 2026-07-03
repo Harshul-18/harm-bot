@@ -7,6 +7,13 @@ from streamlit.testing.v1 import AppTest
 
 
 class AppSmokeTests(unittest.TestCase):
+    def test_sidebar_reopen_control_is_not_hidden_by_css(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        source = app_path.read_text(encoding="utf-8")
+        self.assertNotIn("footer, header", source)
+        self.assertIn('[data-testid="stHeader"]', source)
+        self.assertIn('stBaseButton-headerNoPadding', source)
+
     def test_app_starts_with_all_five_pages(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(str(app_path)).run(timeout=30)
