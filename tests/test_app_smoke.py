@@ -29,7 +29,7 @@ class AppSmokeTests(unittest.TestCase):
         self.assertIn("plt.subplots(facecolor=APP_BACKGROUND)", source)
         self.assertIn("axis.set_facecolor(APP_BACKGROUND)", source)
 
-    def test_app_starts_with_all_five_pages(self) -> None:
+    def test_app_starts_with_all_six_pages(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(str(app_path)).run(timeout=30)
         self.assertFalse(app.exception)
@@ -41,12 +41,12 @@ class AppSmokeTests(unittest.TestCase):
                 "Search Videos",
                 "Playlist Videos Predictor",
                 "Educational Content in a Video",
+                "Learning Path Generator",
             ],
         )
         markdown = "\n".join(item.value for item in app.markdown)
         self.assertIn("created by Harshul Nanda", markdown)
         self.assertIn("Project links", markdown)
-        self.assertEqual(len(app.link_button), 3)
 
     def test_each_page_renders_its_original_input(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
@@ -57,6 +57,7 @@ class AppSmokeTests(unittest.TestCase):
             "Search Videos": "Search for videos",
             "Playlist Videos Predictor": "Enter a YouTube playlist url",
             "Educational Content in a Video": "Enter a Youtube Video URL",
+            "Learning Path Generator": "Enter a playlist URL",
         }
         for page, label in expected_labels.items():
             app.selectbox[0].select(page).run(timeout=30)

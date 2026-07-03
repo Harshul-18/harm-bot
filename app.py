@@ -11,6 +11,11 @@ from PIL import Image
 
 from categoryPredictor import predictCategoryFor
 from eduContentPredictor import eduContentPrediction
+from learning_path import (
+    build_learning_path,
+    learning_path_frame,
+    learning_path_markdown,
+)
 from statsViewer import generate_channel_video_data
 from youtube_service import YouTubeService, YouTubeServiceError
 
@@ -260,6 +265,103 @@ def body_of_page_5() -> None:
         st.error(str(exc))
 
 
+def body_of_page_6() -> None:
+    st.markdown(
+        "Build an ordered study plan from a playlist or channel. HARM Bot filters "
+        "non-educational videos, groups topics, and places introductory material first."
+    )
+    source_type = st.selectbox("Build a learning path from", ["Playlist", "Channel"])
+    label = (
+        "Enter a playlist URL"
+        if source_type == "Playlist"
+        else "Enter a channel URL or handle"
+    )
+    source = st.text_input(label)
+    limit = 20
+    if source_type == "Channel":
+        limit = int(
+            st.number_input(
+                "Recent channel videos to consider",
+                min_value=5,
+                max_value=100,
+                value=20,
+                step=5,
+            )
+        )
+    if not source or not st.button("Generate Learning Path", type="primary"):
+        return
+
+    try:
+        with st.spinner("Fetching and organizing educational videos..."):
+            service = get_youtube_service()
+            videos = (
+                service.get_playlist_videos(source)
+                if source_type == "Playlist"
+                else service.get_channel_videos(source, limit)
+            )
+            progress = st.progress(0, text="Classifying videos...")
+
+            def classify_with_progress(text: str):
+                classify_with_progress.completed += 1
+                result = predictCategoryFor(text=text)
+                progress.progress(
+                    classify_with_progress.completed / len(videos),
+                    text=f"Classifying videos... {classify_with_progress.completed}/{len(videos)}",
+                )
+                return result
+
+            classify_with_progress.completed = 0
+            items, skipped = build_learning_path(videos, classify_with_progress)
+            progress.empty()
+
+        if not items:
+            st.warning("No educational videos were identified in this source.")
+            return
+
+        known_minutes = sum(item.duration_minutes or 0 for item in items)
+        metric_1, metric_2, metric_3 = st.columns(3)
+        metric_1.metric("Learning modules", len(items))
+        metric_2.metric("Non-educational filtered", skipped)
+        metric_3.metric(
+            "Known learning time",
+            (
+                f"{known_minutes // 60}h {known_minutes % 60}m"
+                if known_minutes
+                else "Unavailable"
+            ),
+        )
+
+        frame = learning_path_frame(items)
+        st.dataframe(
+            frame,
+            column_config={"URL": st.column_config.LinkColumn("URL")},
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption(
+            "Levels are explainable title-and-description heuristics; topic labels come "
+            "from HARM Bot's trained classifiers. Review the order for your own background."
+        )
+        csv_data = frame.to_csv(index=False).encode("utf-8")
+        left, right = st.columns(2)
+        left.download_button(
+            "Download CSV plan",
+            csv_data,
+            "harm_learning_path.csv",
+            "text/csv",
+            on_click="ignore",
+        )
+        right.download_button(
+            "Download Markdown plan",
+            learning_path_markdown(items),
+            "harm_learning_path.md",
+            "text/markdown",
+            on_click="ignore",
+        )
+    except (YouTubeServiceError, RuntimeError) as exc:
+        st.error(str(exc))
+
+
 def main() -> None:
     apply_styles()
     add_logo()
@@ -271,6 +373,7 @@ def main() -> None:
             "Search Videos": body_of_page_3,
             "Playlist Videos Predictor": body_of_page_4,
             "Educational Content in a Video": body_of_page_5,
+            "Learning Path Generator": body_of_page_6,
         }
         selected_page = st.sidebar.selectbox("Select the page", pages)
         add_sidebar_menu()

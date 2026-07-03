@@ -12,7 +12,7 @@ from youtube_service import (
 
 
 VIDEO_INFO = {
-    "id": "rfscVS0vtbw",
+    "id": "UOD4_4op2-k",
     "title": "Learn Python",
     "description": "A complete course",
     "channel_id": "UC123",

@@ -36,6 +36,7 @@ class VideoData:
     channel_name: str
     category: str
     provider: str = "unknown"
+    duration_seconds: int | None = None
 
     @property
     def url(self) -> str:
@@ -87,6 +88,14 @@ def _safe_attribute(instance: object, name: str, default: object = "") -> object
         return default if value is None else value
     except Exception:
         return default
+
+
+def _optional_duration(value: object) -> int | None:
+    try:
+        seconds = int(value)
+        return seconds if seconds > 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 class _QuietYtDlpLogger:
@@ -141,6 +150,7 @@ class YouTubeService:
             video_id = extract_video_id(url)
         categories = info.get("categories") or []
         category = str(categories[0]) if categories else "Unknown"
+        duration = info.get("duration")
         return VideoData(
             video_id=video_id,
             title=str(info.get("title") or "Untitled video"),
@@ -149,6 +159,7 @@ class YouTubeService:
             channel_name=str(info.get("channel") or info.get("uploader") or "Unknown channel"),
             category=category,
             provider="yt-dlp",
+            duration_seconds=_optional_duration(duration),
         )
 
     @staticmethod
@@ -164,6 +175,7 @@ class YouTubeService:
             channel_name=str(_safe_attribute(video, "author", "Unknown channel")),
             category="Unknown",
             provider="pytubefix",
+            duration_seconds=_optional_duration(_safe_attribute(video, "length", 0)),
         )
 
     @staticmethod
