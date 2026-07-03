@@ -16,24 +16,11 @@ The app provides six workflows:
    non-educational videos, group them by topic, order introductory material
    before advanced material, estimate known study time, and suggest preparation.
 
-## Learning Path Generator
-
-Choose **Learning Path Generator** in the sidebar and provide either a YouTube
-playlist URL or a channel URL/handle. For channels, choose how many recent
-videos to consider. The generator uses the existing HARM Bot models locally;
-it does not require a paid AI service or API key.
-
-The resulting table explains each video's predicted topic, confidence, learning
-level, duration when YouTube exposes it, and suggested preparation. The complete
-plan can be downloaded as CSV for analysis or Markdown for notes and portfolios.
-The beginner/intermediate/advanced order is based on transparent wording in the
-title and description, so users can review and adjust it for their background.
-
 ## Architecture
 
 ```text
 app.py                  Streamlit UI and six page workflows
-youtube_service.py      Keyless yt-dlp client with PyTubeFix fallback
+youtube_service.py      yt-dlp client with PyTubeFix fallback
 categoryPredictor.py    Educational, category, and subcategory inference
 eduContentPredictor.py  Transcript analysis with metadata fallback
 learning_path.py        Educational filtering, grouping, ordering, and export
