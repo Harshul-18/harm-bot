@@ -26,10 +26,15 @@ eduContentPredictor.py  Transcript analysis with metadata fallback
 learning_path.py        Educational filtering, grouping, ordering, and export
 statsViewer.py          Channel table, summary, chart, and CSV export
 colors.py               Model label taxonomy
-models/                 16 trained scikit-learn pipelines (Git LFS)
+models/                 Optional local copy of trained pipelines (Git LFS)
 scripts/                Live integration smoke test
 tests/                  Provider, model, and Streamlit regression tests
 ```
+
+Trained models are loaded on demand from the Hugging Face Hub repository
+`dragTheDungeon/harm-models`. A local `models/` directory is used when present;
+otherwise artifacts are downloaded and cached by `huggingface_hub`. Override the
+repo with the `HF_MODEL_REPO` environment variable if needed.
 
 ## Local setup
 
@@ -61,10 +66,14 @@ Use `deactivate` when finished. The environment directory is local-only and is
 excluded from Git; the small lock files are what make it reproducible. No API
 key, account, or Streamlit secret is needed.
 
+## Model artifacts
+
+Runtime inference downloads model pickles from [Hugging Face](https://huggingface.co/dragTheDungeon/harm-models/tree/main). The bounded in-memory cache still keeps at most three classifiers resident so hosted deployments stay within memory limits.
+
 ## GitHub setup
 
-The trained models are larger than GitHub's normal file limit, so Git LFS is
-required.
+Optional local model copies are larger than GitHub's normal file limit, so Git
+LFS is required if you commit them.
 
 ```bash
 git lfs install

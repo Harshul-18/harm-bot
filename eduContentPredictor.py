@@ -1,15 +1,14 @@
 from youtube_transcript_api import YouTubeTranscriptApi
-from pathlib import Path
 
 from categoryPredictor import load_model
 from youtube_service import VideoData, extract_video_id
 
 
-EDUCATION_MODEL = Path(__file__).resolve().parent / "models" / "educated_model.pkl"
+EDUCATION_MODEL = "educated_model.pkl"
 
 
 def _metadata_fallback(video: VideoData) -> str:
-    education_model = load_model(str(EDUCATION_MODEL))
+    education_model = load_model(EDUCATION_MODEL)
     prediction = education_model.predict([video.prediction_text])[0]
     if prediction == 0:
         return (
@@ -36,7 +35,7 @@ def eduContentPrediction(url, video=None, progress_callback=None):
         segments = YouTubeTranscriptApi().fetch(video_id, languages=["en"])
         E = 0
         NonE = 0
-        education_model = load_model(str(EDUCATION_MODEL))
+        education_model = load_model(EDUCATION_MODEL)
 
         texts = [segment.text for segment in segments]
         batch_size = 100

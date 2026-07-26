@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from PIL import Image
 
-from categoryPredictor import predictCategoryFor
+from categoryPredictor import HF_MODEL_REPO, get_model_path, predictCategoryFor
 from eduContentPredictor import eduContentPrediction
 from learning_path import (
     build_learning_path,
@@ -132,11 +132,23 @@ def add_footer() -> None:
 
 
 def check_models() -> bool:
-    missing = sorted(name for name in EXPECTED_MODELS if not (MODEL_DIR / name).exists())
-    if missing:
-        st.error("Required model files are missing: " + ", ".join(missing))
+    """Confirm models are available locally or downloadable from Hugging Face."""
+    local_missing = sorted(
+        name for name in EXPECTED_MODELS if not (MODEL_DIR / name).exists()
+    )
+    if not local_missing:
+        return True
+
+    try:
+        get_model_path("educated_model.pkl")
+        return True
+    except Exception as exc:
+        st.error(
+            "Required model files are missing locally "
+            f"({', '.join(local_missing)}) and could not be downloaded from "
+            f"`{HF_MODEL_REPO}`: {exc}"
+        )
         return False
-    return True
 
 
 @st.cache_resource
